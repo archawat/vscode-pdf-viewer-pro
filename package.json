@@ -1,0 +1,79 @@
+{
+  "name": "pdf-viewer-pro",
+  "displayName": "PDF Viewer Pro",
+  "description": "High-performance PDF viewer with advanced features",
+  "version": "1.0.0",
+  "publisher": "pdf-viewer-pro-dev",
+  "engines": {
+    "vscode": "^1.85.0",
+    "node": ">=22.0.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["pdf", "viewer", "performance", "reader"],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCustomEditor:pdfViewerPro.pdfEditor"
+  ],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "pdfViewerPro.pdfEditor",
+        "displayName": "PDF Viewer Pro",
+        "selector": [
+          {
+            "filenamePattern": "*.pdf"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "pdfViewerPro.openPdf",
+        "title": "PDF Viewer Pro: Open PDF File"
+      },
+      {
+        "command": "pdfViewerPro.zoomIn",
+        "title": "PDF Viewer Pro: Zoom In"
+      },
+      {
+        "command": "pdfViewerPro.zoomOut",
+        "title": "PDF Viewer Pro: Zoom Out"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "pdfViewerPro.openPdf",
+          "when": "resourceExtname == .pdf",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "build": "pnpm run package && vsce package --no-dependencies",
+    "build-install": "pnpm run build && code --install-extension pdf-viewer-pro-1.0.0.vsix",
+    "test": "node ./dist/test/runTest.js",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "22.x",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4",
+    "ts-loader": "^9.5.1"
+  },
+  "dependencies": {
+    "lru-cache": "^10.1.0"
+  }
+}
