@@ -151,53 +151,78 @@
         updateUI();
     }
 
+    // Helper function to render a page at 100% scale to a canvas for export
+    function renderPageForExport(page, format, quality) {
+        return new Promise((resolve, reject) => {
+            try {
+                // Always use scale 1.0 for export to get full quality image
+                const viewport = page.getViewport({ scale: 1.0 });
+
+                // Create a temporary canvas for export
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+
+                const renderTask = page.render(renderContext);
+
+                renderTask.promise.then(function() {
+                    // Convert canvas to base64
+                    let dataURL;
+                    let extension;
+
+                    if (format === 'png') {
+                        dataURL = canvas.toDataURL('image/png');
+                        extension = 'png';
+                    } else {
+                        dataURL = canvas.toDataURL('image/jpeg', quality);
+                        extension = 'jpg';
+                    }
+
+                    const base64 = dataURL.split(',')[1];
+                    resolve({ base64, extension });
+                }).catch(reject);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
     function createImage() {
         console.log('createImage() called');
-        
+
         if (!pdfDoc) {
             console.error('No PDF loaded');
             return;
         }
 
-        const canvas = container.querySelector('canvas');
-        if (!canvas) {
-            console.error('No canvas found');
-            return;
-        }
+        const format = imageFormatSelect?.value || 'jpeg';
+        const quality = parseFloat(jpegQualitySelect?.value || '0.75');
 
-        console.log('Canvas found, creating blob for page', pageNum);
+        console.log('Exporting page', pageNum, 'at 100% scale');
 
-        // Convert canvas to base64 with selected format and quality
-        try {
-            const format = imageFormatSelect?.value || 'jpeg';
-            const quality = parseFloat(jpegQualitySelect?.value || '0.75');
-            
-            let dataURL;
-            let extension;
-            
-            if (format === 'png') {
-                dataURL = canvas.toDataURL('image/png');
-                extension = 'png';
-            } else {
-                dataURL = canvas.toDataURL('image/jpeg', quality);
-                extension = 'jpg';
-            }
-            
-            const base64 = dataURL.split(',')[1]; // Remove data URL prefix
-            
-            console.log('Canvas converted to', format, 'quality:', quality, 'length:', base64.length);
+        // Get the current page and render at 100% scale for export
+        pdfDoc.getPage(pageNum).then(function(page) {
+            return renderPageForExport(page, format, quality);
+        }).then(function(result) {
+            console.log('Canvas converted to', format, 'quality:', quality, 'length:', result.base64.length);
             console.log('Sending createImage message for page', pageNum);
-            
+
             vscode.postMessage({
                 type: 'createImage',
-                data: base64,
+                data: result.base64,
                 page: pageNum,
                 format: format,
-                extension: extension
+                extension: result.extension
             });
-        } catch (error) {
+        }).catch(function(error) {
             console.error('Failed to convert canvas to image:', error);
-        }
+        });
     }
 
     function createImageAllPages() {
@@ -340,55 +365,44 @@
         }
 
         if (currentBatchPage <= totalBatchPages) {
-            // Create image for current page
-            const canvas = container.querySelector('canvas');
-            if (canvas) {
-                try {
-                    const format = imageFormatSelect?.value || 'jpeg';
-                    const quality = parseFloat(jpegQualitySelect?.value || '0.75');
-                    
-                    let dataURL;
-                    let extension;
-                    
-                    if (format === 'png') {
-                        dataURL = canvas.toDataURL('image/png');
-                        extension = 'png';
-                    } else {
-                        dataURL = canvas.toDataURL('image/jpeg', quality);
-                        extension = 'jpg';
-                    }
-                    
-                    const base64 = dataURL.split(',')[1]; // Remove data URL prefix
-                    
-                    console.log('Batch: Creating', format, 'for page', currentBatchPage, 'quality:', quality, 'base64 length:', base64.length);
-                    
-                    vscode.postMessage({
-                        type: 'createImage',
-                        data: base64,
-                        page: currentBatchPage,
-                        format: format,
-                        extension: extension
-                    });
+            const format = imageFormatSelect?.value || 'jpeg';
+            const quality = parseFloat(jpegQualitySelect?.value || '0.75');
 
-                    // Move to next page
-                    currentBatchPage++;
-                    if (currentBatchPage <= totalBatchPages) {
-                        pageNum = currentBatchPage;
-                        queueRenderPage(pageNum);
-                        updateUI();
-                        
-                        // Wait for page to render then continue
-                        setTimeout(processBatchImageCreation, 1000);
-                    } else {
-                        // Batch creation complete
-                        batchImageCreation = false;
-                        console.log('Batch image creation completed');
-                    }
-                } catch (error) {
-                    console.error('Batch: Failed to convert canvas to image:', error);
+            console.log('Batch: Exporting page', currentBatchPage, 'at 100% scale');
+
+            // Get the page and render at 100% scale for export
+            pdfDoc.getPage(currentBatchPage).then(function(page) {
+                return renderPageForExport(page, format, quality);
+            }).then(function(result) {
+                console.log('Batch: Creating', format, 'for page', currentBatchPage, 'quality:', quality, 'base64 length:', result.base64.length);
+
+                vscode.postMessage({
+                    type: 'createImage',
+                    data: result.base64,
+                    page: currentBatchPage,
+                    format: format,
+                    extension: result.extension
+                });
+
+                // Move to next page
+                currentBatchPage++;
+                if (currentBatchPage <= totalBatchPages) {
+                    // Update displayed page for visual feedback
+                    pageNum = currentBatchPage;
+                    queueRenderPage(pageNum);
+                    updateUI();
+
+                    // Continue with next page after a short delay
+                    setTimeout(processBatchImageCreation, 500);
+                } else {
+                    // Batch creation complete
                     batchImageCreation = false;
+                    console.log('Batch image creation completed');
                 }
-            }
+            }).catch(function(error) {
+                console.error('Batch: Failed to convert page to image:', error);
+                batchImageCreation = false;
+            });
         }
     }
 
