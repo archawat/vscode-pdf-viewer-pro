@@ -138,13 +138,16 @@
         container.innerHTML = '<div class="loading"><p>Rendering page...</p></div>';
 
         pdfDoc.getPage(num).then(function(page) {
-            const viewport = page.getViewport({ scale: scale });
-            
+            const dpr = window.devicePixelRatio || 1;
+            const viewport = page.getViewport({ scale: scale * dpr });
+
             // Create canvas
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             canvas.height = viewport.height;
             canvas.width = viewport.width;
+            canvas.style.width = (viewport.width / dpr) + 'px';
+            canvas.style.height = (viewport.height / dpr) + 'px';
 
             const renderContext = {
                 canvasContext: ctx,
