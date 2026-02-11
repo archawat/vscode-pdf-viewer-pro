@@ -10,6 +10,11 @@
     let totalBatchPages = 0;
     let currentPdfData = null;
 
+    // Search state
+    let searchResults = [];
+    let currentMatchIndex = -1;
+    let allPagesTextContent = {};
+
     const container = document.getElementById('pdfContainer');
     const currentPageSpan = document.getElementById('currentPage');
     const totalPagesSpan = document.getElementById('totalPages');
@@ -26,23 +31,24 @@
     const passwordInput = document.getElementById('passwordInput');
     const passwordSubmit = document.getElementById('passwordSubmit');
     const passwordError = document.getElementById('passwordError');
+    const printPdfBtn = document.getElementById('printPdf');
+    const searchBar = document.getElementById('searchBar');
+    const searchInput = document.getElementById('searchInput');
+    const searchInfo = document.getElementById('searchInfo');
+    const searchPrevBtn = document.getElementById('searchPrev');
+    const searchNextBtn = document.getElementById('searchNext');
+    const searchCloseBtn = document.getElementById('searchClose');
 
-    // Load PDF.js from CDN
-    const pdfjsScript = document.createElement('script');
-    pdfjsScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    pdfjsScript.onload = function() {
-        // Set worker source
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        console.log('PDF.js loaded successfully');
-    };
-    document.head.appendChild(pdfjsScript);
+    // Configure PDF.js worker from local bundle
+    const workerUri = document.body.getAttribute('data-worker-uri');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUri;
+    console.log('PDF.js loaded locally');
 
     function updateUI() {
         currentPageSpan.textContent = pageNum;
         totalPagesSpan.textContent = pdfDoc ? pdfDoc.numPages : 1;
         zoomLevelSpan.textContent = Math.round(scale * 100) + '%';
-        
-        // Update button states
+
         if (prevPageBtn) {
             prevPageBtn.disabled = pageNum <= 1;
         }
@@ -134,12 +140,13 @@
 
     function renderPage(num) {
         pageRendering = true;
-        
+
         container.innerHTML = '<div class="loading"><p>Rendering page...</p></div>';
 
         pdfDoc.getPage(num).then(function(page) {
             const dpr = window.devicePixelRatio || 1;
             const viewport = page.getViewport({ scale: scale * dpr });
+            const cssViewport = page.getViewport({ scale: scale });
 
             // Create canvas
             const canvas = document.createElement('canvas');
@@ -159,23 +166,42 @@
             renderTask.promise.then(function() {
                 pageRendering = false;
                 container.innerHTML = '';
-                
+
                 const wrapper = document.createElement('div');
                 wrapper.className = 'page-wrapper';
+                wrapper.style.width = (viewport.width / dpr) + 'px';
+                wrapper.style.height = (viewport.height / dpr) + 'px';
                 wrapper.appendChild(canvas);
+
+                // Create text layer for text selection
+                const textLayerDiv = document.createElement('div');
+                textLayerDiv.className = 'textLayer';
+                textLayerDiv.style.setProperty('--scale-factor', String(scale));
+                wrapper.appendChild(textLayerDiv);
+
                 container.appendChild(wrapper);
+
+                // Render text layer
+                page.getTextContent().then(function(textContent) {
+                    pdfjsLib.renderTextLayer({
+                        textContent: textContent,
+                        container: textLayerDiv,
+                        viewport: cssViewport
+                    });
+                    // Re-highlight search matches after text layer renders
+                    setTimeout(highlightCurrentMatch, 50);
+                });
 
                 if (pageNumPending !== null) {
                     renderPage(pageNumPending);
                     pageNumPending = null;
                 } else if (batchImageCreation) {
-                    // Trigger batch image creation after page is rendered
                     setTimeout(processBatchImageCreation, 100);
                 }
             });
         }).catch(function(error) {
             pageRendering = false;
-            container.innerHTML = `<div class="error">Error rendering page: ${error}</div>`;
+            container.innerHTML = '<div class="error">Error rendering page: ' + error + '</div>';
         });
     }
 
@@ -188,25 +214,15 @@
     }
 
     function onPrevPage() {
-        console.log('Previous page clicked, current page:', pageNum);
-        if (pageNum <= 1) {
-            console.log('Already at first page');
-            return;
-        }
+        if (pageNum <= 1) return;
         pageNum--;
-        console.log('Going to page:', pageNum);
         queueRenderPage(pageNum);
         updateUI();
     }
 
     function onNextPage() {
-        console.log('Next page clicked, current page:', pageNum, 'total pages:', pdfDoc ? pdfDoc.numPages : 'unknown');
-        if (!pdfDoc || pageNum >= pdfDoc.numPages) {
-            console.log('Already at last page or PDF not loaded');
-            return;
-        }
+        if (!pdfDoc || pageNum >= pdfDoc.numPages) return;
         pageNum++;
-        console.log('Going to page:', pageNum);
         queueRenderPage(pageNum);
         updateUI();
     }
@@ -227,10 +243,7 @@
     function renderPageForExport(page, format, quality) {
         return new Promise((resolve, reject) => {
             try {
-                // Always use scale 1.0 for export to get full quality image
                 const viewport = page.getViewport({ scale: 1.0 });
-
-                // Create a temporary canvas for export
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 canvas.height = viewport.height;
@@ -244,7 +257,6 @@
                 const renderTask = page.render(renderContext);
 
                 renderTask.promise.then(function() {
-                    // Convert canvas to base64
                     let dataURL;
                     let extension;
 
@@ -266,25 +278,14 @@
     }
 
     function createImage() {
-        console.log('createImage() called');
-
-        if (!pdfDoc) {
-            console.error('No PDF loaded');
-            return;
-        }
+        if (!pdfDoc) return;
 
         const format = imageFormatSelect?.value || 'jpeg';
         const quality = parseFloat(jpegQualitySelect?.value || '0.75');
 
-        console.log('Exporting page', pageNum, 'at 100% scale');
-
-        // Get the current page and render at 100% scale for export
         pdfDoc.getPage(pageNum).then(function(page) {
             return renderPageForExport(page, format, quality);
         }).then(function(result) {
-            console.log('Canvas converted to', format, 'quality:', quality, 'length:', result.base64.length);
-            console.log('Sending createImage message for page', pageNum);
-
             vscode.postMessage({
                 type: 'createImage',
                 data: result.base64,
@@ -298,14 +299,7 @@
     }
 
     function createImageAllPages() {
-        console.log('createImageAllPages() called');
-        
-        if (!pdfDoc) {
-            console.error('No PDF loaded');
-            return;
-        }
-
-        console.log('Sending createImageAllPages message for', pdfDoc.numPages, 'pages');
+        if (!pdfDoc) return;
 
         vscode.postMessage({
             type: 'createImageAllPages',
@@ -320,7 +314,177 @@
         }
     }
 
-    // Event listeners
+    // --- Search functions ---
+
+    function toggleSearchBar() {
+        if (!searchBar) return;
+        if (searchBar.style.display === 'none') {
+            searchBar.style.display = 'flex';
+            document.body.classList.add('search-open');
+            if (searchInput) {
+                searchInput.focus();
+                searchInput.select();
+            }
+        } else {
+            closeSearchBar();
+        }
+    }
+
+    function closeSearchBar() {
+        if (searchBar) searchBar.style.display = 'none';
+        document.body.classList.remove('search-open');
+        clearSearchHighlights();
+        searchResults = [];
+        currentMatchIndex = -1;
+        if (searchInfo) searchInfo.textContent = '0 of 0';
+    }
+
+    function getAllTextContent() {
+        if (!pdfDoc) return Promise.resolve();
+        var promises = [];
+        for (var i = 1; i <= pdfDoc.numPages; i++) {
+            if (!allPagesTextContent[i]) {
+                (function(pageIdx) {
+                    promises.push(
+                        pdfDoc.getPage(pageIdx).then(function(page) {
+                            return page.getTextContent().then(function(tc) {
+                                allPagesTextContent[pageIdx] = tc;
+                            });
+                        })
+                    );
+                })(i);
+            }
+        }
+        return Promise.all(promises);
+    }
+
+    function performSearch(query) {
+        if (!query || !pdfDoc) {
+            searchResults = [];
+            currentMatchIndex = -1;
+            if (searchInfo) searchInfo.textContent = '0 of 0';
+            clearSearchHighlights();
+            return;
+        }
+
+        getAllTextContent().then(function() {
+            searchResults = [];
+            var lowerQuery = query.toLowerCase();
+
+            for (var pageIdx = 1; pageIdx <= pdfDoc.numPages; pageIdx++) {
+                var textContent = allPagesTextContent[pageIdx];
+                if (!textContent || !textContent.items) continue;
+
+                var fullText = '';
+                var itemPositions = [];
+
+                for (var i = 0; i < textContent.items.length; i++) {
+                    var item = textContent.items[i];
+                    var startPos = fullText.length;
+                    fullText += item.str;
+                    for (var c = 0; c < item.str.length; c++) {
+                        itemPositions.push({ itemIndex: i, charIndex: c });
+                    }
+                }
+
+                var lowerText = fullText.toLowerCase();
+                var searchPos = 0;
+                while (true) {
+                    var idx = lowerText.indexOf(lowerQuery, searchPos);
+                    if (idx === -1) break;
+                    searchResults.push({
+                        pageNum: pageIdx,
+                        itemPositions: itemPositions.slice(idx, idx + query.length)
+                    });
+                    searchPos = idx + 1;
+                }
+            }
+
+            if (searchResults.length > 0) {
+                currentMatchIndex = 0;
+                if (searchInfo) searchInfo.textContent = '1 of ' + searchResults.length;
+                navigateToMatch(0);
+            } else {
+                currentMatchIndex = -1;
+                if (searchInfo) searchInfo.textContent = '0 of 0';
+                clearSearchHighlights();
+            }
+        });
+    }
+
+    function navigateToMatch(index) {
+        if (index < 0 || index >= searchResults.length) return;
+        currentMatchIndex = index;
+        if (searchInfo) searchInfo.textContent = (index + 1) + ' of ' + searchResults.length;
+
+        var match = searchResults[index];
+        if (match.pageNum !== pageNum) {
+            pageNum = match.pageNum;
+            queueRenderPage(pageNum);
+            updateUI();
+        } else {
+            highlightCurrentMatch();
+        }
+    }
+
+    function highlightCurrentMatch() {
+        clearSearchHighlights();
+        if (currentMatchIndex < 0 || !searchResults.length) return;
+
+        var textLayerDiv = document.querySelector('.textLayer');
+        if (!textLayerDiv) return;
+
+        var spans = textLayerDiv.querySelectorAll('span');
+        if (!spans.length) return;
+
+        var currentPageMatches = searchResults.filter(function(m) {
+            return m.pageNum === pageNum;
+        });
+
+        currentPageMatches.forEach(function(match) {
+            var isActive = searchResults[currentMatchIndex] === match;
+            var highlightedItems = {};
+
+            match.itemPositions.forEach(function(pos) {
+                if (pos.itemIndex < spans.length && !highlightedItems[pos.itemIndex]) {
+                    highlightedItems[pos.itemIndex] = true;
+                    var span = spans[pos.itemIndex];
+                    span.classList.add('search-highlight');
+                    if (isActive) {
+                        span.classList.add('active');
+                    }
+                }
+            });
+
+            if (isActive) {
+                // Scroll active match into view
+                var activeSpan = textLayerDiv.querySelector('.search-highlight.active');
+                if (activeSpan) {
+                    activeSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        });
+    }
+
+    function clearSearchHighlights() {
+        var highlights = document.querySelectorAll('.search-highlight');
+        highlights.forEach(function(el) {
+            el.classList.remove('search-highlight', 'active');
+        });
+    }
+
+    function searchNext() {
+        if (searchResults.length === 0) return;
+        navigateToMatch((currentMatchIndex + 1) % searchResults.length);
+    }
+
+    function searchPrevious() {
+        if (searchResults.length === 0) return;
+        navigateToMatch((currentMatchIndex - 1 + searchResults.length) % searchResults.length);
+    }
+
+    // --- Event listeners ---
+
     if (zoomInBtn) zoomInBtn.addEventListener('click', zoomIn);
     if (zoomOutBtn) zoomOutBtn.addEventListener('click', zoomOut);
     if (createImageBtn) createImageBtn.addEventListener('click', createImage);
@@ -334,6 +498,9 @@
     if (jpegQualitySelect) jpegQualitySelect.addEventListener('change', saveSettings);
     if (nextPageBtn) nextPageBtn.addEventListener('click', onNextPage);
     if (prevPageBtn) prevPageBtn.addEventListener('click', onPrevPage);
+    if (printPdfBtn) printPdfBtn.addEventListener('click', function() {
+        vscode.postMessage({ type: 'printPdf' });
+    });
     if (passwordSubmit) {
         passwordSubmit.addEventListener('click', function() {
             const pw = passwordInput ? passwordInput.value : '';
@@ -351,7 +518,49 @@
         });
     }
 
+    // Search event listeners
+    if (searchCloseBtn) searchCloseBtn.addEventListener('click', closeSearchBar);
+    if (searchNextBtn) searchNextBtn.addEventListener('click', searchNext);
+    if (searchPrevBtn) searchPrevBtn.addEventListener('click', searchPrevious);
+    if (searchInput) {
+        var searchTimeout = null;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(function() {
+                performSearch(searchInput.value);
+            }, 300);
+        });
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    searchPrevious();
+                } else {
+                    searchNext();
+                }
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeSearchBar();
+            }
+        });
+    }
+
     document.addEventListener('keydown', function(e) {
+        // Ctrl+F / Cmd+F for search
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            e.preventDefault();
+            toggleSearchBar();
+            return;
+        }
+        // Ctrl+P / Cmd+P for print
+        if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+            e.preventDefault();
+            vscode.postMessage({ type: 'printPdf' });
+            return;
+        }
+        // Don't handle navigation keys when search input is focused
+        if (document.activeElement === searchInput) return;
         switch(e.key) {
             case 'ArrowLeft':
             case 'PageUp':
@@ -381,48 +590,44 @@
                 console.log('Initializing PDF viewer');
                 vscode.postMessage({ type: 'requestPage', page: 1 });
                 break;
-                
+
             case 'pdfData':
                 console.log('Received PDF data, loading...');
-                if (typeof pdfjsLib === 'undefined') {
-                    container.innerHTML = '<div class="error">PDF.js not loaded yet. Please wait...</div>';
-                    return;
-                }
-
                 currentPdfData = Uint8Array.from(atob(message.data), c => c.charCodeAt(0));
+                allPagesTextContent = {};
+                searchResults = [];
+                currentMatchIndex = -1;
                 loadPdfWithPassword(message.password || null);
                 break;
-                
+
             case 'error':
                 console.error('PDF Error:', message.message);
-                container.innerHTML = `<div class="error">Error: ${message.message}</div>`;
+                container.innerHTML = '<div class="error">Error: ' + message.message + '</div>';
                 break;
-                
+
             case 'zoomIn':
                 zoomIn();
                 break;
-                
+
             case 'zoomOut':
                 zoomOut();
                 break;
-                
+
             case 'startBatchImageCreation':
                 console.log('Starting batch image creation for', message.totalPages, 'pages');
                 batchImageCreation = true;
                 currentBatchPage = 1;
                 totalBatchPages = message.totalPages;
-                
-                // Start with the first page
+
                 if (pageNum !== 1) {
                     pageNum = 1;
                     queueRenderPage(pageNum);
                     updateUI();
                 } else {
-                    // If already on page 1, start immediately
                     setTimeout(processBatchImageCreation, 100);
                 }
                 break;
-                
+
             case 'settingsLoaded':
                 if (message.settings) {
                     if (imageFormatSelect && message.settings.imageFormat) {
@@ -432,29 +637,21 @@
                         jpegQualitySelect.value = message.settings.jpegQuality;
                     }
                     toggleQualitySelector();
-                    console.log('Settings loaded:', message.settings);
                 }
                 break;
         }
     });
 
     function processBatchImageCreation() {
-        if (!batchImageCreation || !pdfDoc) {
-            return;
-        }
+        if (!batchImageCreation || !pdfDoc) return;
 
         if (currentBatchPage <= totalBatchPages) {
             const format = imageFormatSelect?.value || 'jpeg';
             const quality = parseFloat(jpegQualitySelect?.value || '0.75');
 
-            console.log('Batch: Exporting page', currentBatchPage, 'at 100% scale');
-
-            // Get the page and render at 100% scale for export
             pdfDoc.getPage(currentBatchPage).then(function(page) {
                 return renderPageForExport(page, format, quality);
             }).then(function(result) {
-                console.log('Batch: Creating', format, 'for page', currentBatchPage, 'quality:', quality, 'base64 length:', result.base64.length);
-
                 vscode.postMessage({
                     type: 'createImage',
                     data: result.base64,
@@ -463,18 +660,13 @@
                     extension: result.extension
                 });
 
-                // Move to next page
                 currentBatchPage++;
                 if (currentBatchPage <= totalBatchPages) {
-                    // Update displayed page for visual feedback
                     pageNum = currentBatchPage;
                     queueRenderPage(pageNum);
                     updateUI();
-
-                    // Continue with next page after a short delay
                     setTimeout(processBatchImageCreation, 500);
                 } else {
-                    // Batch creation complete
                     batchImageCreation = false;
                     console.log('Batch image creation completed');
                 }
@@ -489,7 +681,6 @@
     container.innerHTML = '<div class="loading"><p>Loading PDF...</p></div>';
     console.log('PDF viewer initialized, waiting for messages...');
     vscode.postMessage({ type: 'ready' });
-    
-    // Load saved settings
+
     loadSettings();
 })();

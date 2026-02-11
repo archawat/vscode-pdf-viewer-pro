@@ -63,6 +63,9 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
                 case 'passwordProvided':
                     this.lastPassword = message.password;
                     break;
+                case 'printPdf':
+                    await this.handlePrintPdf(document.uri);
+                    break;
                 case 'saveSettings':
                     this.saveSettings(message.settings);
                     break;
@@ -124,16 +127,26 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
         const styleUri = webview.asWebviewUri(
             vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'styles.css'))
         );
+        const pdfjsUri = webview.asWebviewUri(
+            vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'vendor', 'pdf.min.js'))
+        );
+        const pdfjsWorkerUri = webview.asWebviewUri(
+            vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'vendor', 'pdf.worker.min.js'))
+        );
+        const pdfjsViewerCssUri = webview.asWebviewUri(
+            vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'vendor', 'pdf_viewer.css'))
+        );
 
         return `<!DOCTYPE html>
         <html>
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <link href="${pdfjsViewerCssUri}" rel="stylesheet">
             <link href="${styleUri}" rel="stylesheet">
             <title>PDF Viewer Pro</title>
         </head>
-        <body>
+        <body data-worker-uri="${pdfjsWorkerUri}">
             <div id="toolbar">
                 <div id="zoom-controls">
                     <button id="zoomOut">-</button>
@@ -157,11 +170,21 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
                         <option value="1.00">100%</option>
                     </select>
                 </div>
-                <div id="page-controls">
-                    <button id="prevPage">←</button>
-                    <span id="pageInfo">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
-                    <button id="nextPage">→</button>
+                <div id="print-controls">
+                    <button id="printPdf" title="Open in system viewer to print">Print</button>
                 </div>
+                <div id="page-controls">
+                    <button id="prevPage">&larr;</button>
+                    <span id="pageInfo">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
+                    <button id="nextPage">&rarr;</button>
+                </div>
+            </div>
+            <div id="searchBar" style="display:none">
+                <input type="text" id="searchInput" placeholder="Search in document..." />
+                <span id="searchInfo">0 of 0</span>
+                <button id="searchPrev" title="Previous match">&#9650;</button>
+                <button id="searchNext" title="Next match">&#9660;</button>
+                <button id="searchClose" title="Close search">&times;</button>
             </div>
             <div id="pdfContainer"></div>
             <div id="passwordOverlay" style="display:none">
@@ -172,6 +195,7 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
                     <p id="passwordError" style="display:none"></p>
                 </div>
             </div>
+            <script src="${pdfjsUri}"></script>
             <script src="${scriptUri}"></script>
         </body>
         </html>`;
@@ -187,6 +211,15 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
         this.activeEditors.forEach(editor => {
             editor.webview.postMessage({ type: 'zoomOut' });
         });
+    }
+
+    private async handlePrintPdf(uri: vscode.Uri) {
+        try {
+            await vscode.env.openExternal(uri);
+        } catch (error) {
+            console.error('Error opening PDF for print:', error);
+            vscode.window.showErrorMessage(`Failed to open PDF for printing: ${error}`);
+        }
     }
 
     private async handleCreateImage(uri: vscode.Uri, imageData: string, pageNum: number, format?: string, extension?: string) {

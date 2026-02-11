@@ -20,7 +20,7 @@ body {
     z-index: 100;
 }
 
-#zoom-controls, #image-controls, #page-controls {
+#zoom-controls, #image-controls, #print-controls, #page-controls {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -90,12 +90,10 @@ body {
 }
 
 .page-wrapper {
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    position: relative;
     transform-origin: top center;
     transition: transform 0.2s ease;
-    margin: 20px 0;
+    margin: 20px auto;
 }
 
 .page-wrapper canvas {
@@ -189,6 +187,86 @@ body {
     color: var(--vscode-errorForeground);
     font-size: 12px;
     margin: 8px 0 0 0;
+}
+
+/* Text layer - positioned over canvas for text selection */
+.textLayer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    opacity: 0.25;
+    line-height: 1.0;
+}
+
+.textLayer ::selection {
+    background: var(--vscode-editor-selectionBackground, rgba(0, 120, 215, 0.3));
+}
+
+/* Search bar */
+#searchBar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background-color: var(--vscode-editorWidget-background);
+    border-bottom: 1px solid var(--vscode-panel-border);
+    z-index: 100;
+}
+
+#searchInput {
+    flex: 1;
+    max-width: 300px;
+    padding: 4px 8px;
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 3px;
+    font-size: 13px;
+}
+
+#searchInput:focus {
+    outline: none;
+    border-color: var(--vscode-focusBorder);
+}
+
+#searchInfo {
+    font-size: 12px;
+    color: var(--vscode-descriptionForeground);
+    min-width: 60px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+#searchBar button {
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+#searchBar button:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+/* Search highlights */
+.search-highlight {
+    background-color: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33)) !important;
+    border-radius: 2px;
+}
+
+.search-highlight.active {
+    background-color: var(--vscode-editor-findMatchBackground, rgba(162, 190, 44, 0.5)) !important;
+    outline: 1px solid var(--vscode-editor-findMatchBorder, rgba(162, 190, 44, 0.8));
+}
+
+body.search-open #pdfContainer {
+    height: calc(100vh - 60px - 38px);
 }
 
 .page-wrapper object,
