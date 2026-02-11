@@ -8,6 +8,7 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
     private renderer: PdfRenderer;
     private cache: PdfCache;
     private activeEditors = new Set<vscode.WebviewPanel>();
+    private lastPassword: string | null = null;
 
     constructor(private context: vscode.ExtensionContext) {
         this.renderer = new PdfRenderer();
@@ -59,6 +60,9 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
                     console.log('Processing createImageAllPages for', message.totalPages, 'pages');
                     await this.handleCreateImageAllPages(webviewPanel.webview, document.uri, message.totalPages);
                     break;
+                case 'passwordProvided':
+                    this.lastPassword = message.password;
+                    break;
                 case 'saveSettings':
                     this.saveSettings(message.settings);
                     break;
@@ -86,7 +90,8 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
 
             webview.postMessage({
                 type: 'pdfData',
-                data: pdfData
+                data: pdfData,
+                password: this.lastPassword
             });
         } catch (error) {
             console.error('Error loading PDF:', error);
@@ -159,6 +164,14 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
                 </div>
             </div>
             <div id="pdfContainer"></div>
+            <div id="passwordOverlay" style="display:none">
+                <div class="password-dialog">
+                    <p>This PDF is password protected</p>
+                    <input type="password" id="passwordInput" placeholder="Enter password" />
+                    <button id="passwordSubmit">Unlock</button>
+                    <p id="passwordError" style="display:none"></p>
+                </div>
+            </div>
             <script src="${scriptUri}"></script>
         </body>
         </html>`;

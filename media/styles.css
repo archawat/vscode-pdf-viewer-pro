@@ -124,6 +124,73 @@ body {
     font-size: 16px;
 }
 
+#passwordOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 200;
+}
+
+.password-dialog {
+    background-color: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 8px;
+    padding: 24px 32px;
+    text-align: center;
+    min-width: 300px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.password-dialog p {
+    margin: 0 0 16px 0;
+    font-size: 14px;
+    color: var(--vscode-foreground);
+}
+
+.password-dialog input[type="password"] {
+    width: 100%;
+    padding: 8px 12px;
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+    margin-bottom: 12px;
+}
+
+.password-dialog input[type="password"]:focus {
+    outline: none;
+    border-color: var(--vscode-focusBorder);
+}
+
+.password-dialog button {
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    border-radius: 4px;
+    padding: 8px 24px;
+    cursor: pointer;
+    font-size: 14px;
+    width: 100%;
+}
+
+.password-dialog button:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+#passwordError {
+    color: var(--vscode-errorForeground);
+    font-size: 12px;
+    margin: 8px 0 0 0;
+}
+
 .page-wrapper object,
 .page-wrapper embed {
     border: 1px solid var(--vscode-panel-border);

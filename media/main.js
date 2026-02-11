@@ -8,6 +8,7 @@
     let batchImageCreation = false;
     let currentBatchPage = 1;
     let totalBatchPages = 0;
+    let currentPdfData = null;
 
     const container = document.getElementById('pdfContainer');
     const currentPageSpan = document.getElementById('currentPage');
@@ -21,6 +22,10 @@
     const jpegQualitySelect = document.getElementById('jpegQuality');
     const nextPageBtn = document.getElementById('nextPage');
     const prevPageBtn = document.getElementById('prevPage');
+    const passwordOverlay = document.getElementById('passwordOverlay');
+    const passwordInput = document.getElementById('passwordInput');
+    const passwordSubmit = document.getElementById('passwordSubmit');
+    const passwordError = document.getElementById('passwordError');
 
     // Load PDF.js from CDN
     const pdfjsScript = document.createElement('script');
@@ -60,6 +65,70 @@
     function loadSettings() {
         vscode.postMessage({
             type: 'loadSettings'
+        });
+    }
+
+    function isPasswordError(error) {
+        return error.name === 'PasswordException'
+            || (error.message && error.message.indexOf('password') !== -1)
+            || (String(error).indexOf('PasswordException') !== -1);
+    }
+
+    function showPasswordOverlay(errorMsg) {
+        container.innerHTML = '';
+        if (passwordOverlay) {
+            passwordOverlay.style.display = 'flex';
+            if (passwordInput) {
+                passwordInput.value = '';
+                setTimeout(function() { passwordInput.focus(); }, 100);
+            }
+            if (passwordError) {
+                if (errorMsg) {
+                    passwordError.textContent = errorMsg;
+                    passwordError.style.display = 'block';
+                } else {
+                    passwordError.style.display = 'none';
+                }
+            }
+        }
+    }
+
+    function hidePasswordOverlay() {
+        if (passwordOverlay) {
+            passwordOverlay.style.display = 'none';
+        }
+        if (passwordError) {
+            passwordError.style.display = 'none';
+        }
+    }
+
+    function loadPdfWithPassword(password) {
+        if (!currentPdfData) return;
+
+        const opts = { data: currentPdfData.slice() };
+        if (password) {
+            opts.password = password;
+        }
+
+        pdfjsLib.getDocument(opts).promise.then(function(pdf) {
+            pdfDoc = pdf;
+            hidePasswordOverlay();
+            if (password) {
+                vscode.postMessage({ type: 'passwordProvided', password: password });
+            }
+            renderPage(pageNum);
+            updateUI();
+        }).catch(function(error) {
+            if (error.name === 'PasswordException') {
+                if (!password) {
+                    showPasswordOverlay();
+                } else {
+                    showPasswordOverlay('Incorrect password. Please try again.');
+                }
+            } else {
+                hidePasswordOverlay();
+                container.innerHTML = '<div class="error">Error loading PDF: ' + error + '</div>';
+            }
         });
     }
 
@@ -262,6 +331,22 @@
     if (jpegQualitySelect) jpegQualitySelect.addEventListener('change', saveSettings);
     if (nextPageBtn) nextPageBtn.addEventListener('click', onNextPage);
     if (prevPageBtn) prevPageBtn.addEventListener('click', onPrevPage);
+    if (passwordSubmit) {
+        passwordSubmit.addEventListener('click', function() {
+            const pw = passwordInput ? passwordInput.value : '';
+            if (pw) loadPdfWithPassword(pw);
+        });
+    }
+    if (passwordInput) {
+        passwordInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                const pw = passwordInput.value;
+                if (pw) loadPdfWithPassword(pw);
+            }
+        });
+    }
 
     document.addEventListener('keydown', function(e) {
         switch(e.key) {
@@ -300,18 +385,9 @@
                     container.innerHTML = '<div class="error">PDF.js not loaded yet. Please wait...</div>';
                     return;
                 }
-                
-                const pdfData = Uint8Array.from(atob(message.data), c => c.charCodeAt(0));
-                
-                pdfjsLib.getDocument({ data: pdfData }).promise.then(function(pdf) {
-                    pdfDoc = pdf;
-                    console.log('PDF loaded successfully, pages:', pdf.numPages);
-                    renderPage(pageNum);
-                    updateUI();
-                }).catch(function(error) {
-                    console.error('Error loading PDF:', error);
-                    container.innerHTML = `<div class="error">Error loading PDF: ${error}</div>`;
-                });
+
+                currentPdfData = Uint8Array.from(atob(message.data), c => c.charCodeAt(0));
+                loadPdfWithPassword(message.password || null);
                 break;
                 
             case 'error':
