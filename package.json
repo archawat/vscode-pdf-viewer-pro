@@ -10,6 +10,10 @@
   },
   "categories": ["Other"],
   "keywords": ["pdf", "viewer", "performance", "reader"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/archawat/vscode-pdf-viewer-pro"
+  },
   "main": "./dist/extension.js",
   "activationEvents": [
     "onCustomEditor:pdfViewerPro.pdfEditor"
