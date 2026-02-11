@@ -56,11 +56,12 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run package",
-    "compile": "webpack",
-    "watch": "webpack --watch",
+    "copy-vendor": "mkdir -p media/vendor && cp node_modules/pdfjs-dist/build/pdf.min.js media/vendor/ && cp node_modules/pdfjs-dist/build/pdf.worker.min.js media/vendor/ && cp node_modules/pdfjs-dist/web/pdf_viewer.css media/vendor/",
+    "vscode:prepublish": "pnpm run copy-vendor && pnpm run package",
+    "compile": "pnpm run copy-vendor && webpack",
+    "watch": "pnpm run copy-vendor && webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
-    "build": "pnpm run package && vsce package --no-dependencies",
+    "build": "pnpm run copy-vendor && pnpm run package && vsce package --no-dependencies",
     "build-install": "pnpm run build && code --install-extension pdf-viewer-pro-1.0.0.vsix",
     "test": "node ./dist/test/runTest.js",
     "lint": "eslint src --ext ts"
@@ -78,6 +79,7 @@
     "ts-loader": "^9.5.1"
   },
   "dependencies": {
-    "lru-cache": "^10.1.0"
+    "lru-cache": "^10.1.0",
+    "pdfjs-dist": "3.11.174"
   }
 }

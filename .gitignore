@@ -2,6 +2,7 @@
 out/
 dist/
 *.vsix
+media/vendor/
 
 # Dependencies
 node_modules/
