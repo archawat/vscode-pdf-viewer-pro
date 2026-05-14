@@ -1,19 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { PdfRenderer } from './pdfRenderer';
-import { PdfCache } from './pdfCache';
 
 export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
-    private renderer: PdfRenderer;
-    private cache: PdfCache;
     private activeEditors = new Set<vscode.WebviewPanel>();
     private lastPassword: string | null = null;
 
-    constructor(private context: vscode.ExtensionContext) {
-        this.renderer = new PdfRenderer();
-        this.cache = new PdfCache(100);
-    }
+    constructor(private context: vscode.ExtensionContext) {}
 
     async openCustomDocument(uri: vscode.Uri): Promise<vscode.CustomDocument> {
         return { uri, dispose: () => {} };
@@ -82,18 +75,10 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
 
     private async handlePageRequest(webview: vscode.Webview, uri: vscode.Uri, pageNum: number) {
         try {
-            const cacheKey = uri.fsPath;
-            let pdfData = this.cache.get(cacheKey);
-
-            if (!pdfData) {
-                console.log(`Loading PDF data from ${uri.fsPath}`);
-                pdfData = await this.renderer.renderPage(uri.fsPath, pageNum);
-                this.cache.set(cacheKey, pdfData);
-            }
-
+            const pdfUrl = webview.asWebviewUri(uri).toString();
             webview.postMessage({
                 type: 'pdfData',
-                data: pdfData,
+                url: pdfUrl,
                 password: this.lastPassword
             });
         } catch (error) {
@@ -121,6 +106,7 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
     }
 
     private async getWebviewContent(webview: vscode.Webview, uri: vscode.Uri): Promise<string> {
+        const extensionVersion = this.context.extension.packageJSON.version as string;
         const scriptUri = webview.asWebviewUri(
             vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'main.js'))
         );
@@ -169,6 +155,12 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
                         <option value="0.95">95%</option>
                         <option value="1.00">100%</option>
                     </select>
+                    <select id="imageScale" title="Image render scale (higher = sharper, larger file)">
+                        <option value="1">1x (72dpi)</option>
+                        <option value="2" selected>2x (144dpi)</option>
+                        <option value="3">3x (216dpi)</option>
+                        <option value="4">4x (288dpi)</option>
+                    </select>
                 </div>
                 <div id="print-controls">
                     <button id="printPdf" title="Open in system viewer to print">Print</button>
@@ -178,6 +170,7 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
                     <span id="pageInfo">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
                     <button id="nextPage">&rarr;</button>
                 </div>
+                <span id="versionTag" title="Extension version">v${extensionVersion}</span>
             </div>
             <div id="searchBar" style="display:none">
                 <input type="text" id="searchInput" placeholder="Search in document..." />
@@ -286,7 +279,8 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
         try {
             const settings = this.context.globalState.get('pdfViewerSettings', {
                 imageFormat: 'jpeg',
-                jpegQuality: '0.75'
+                jpegQuality: '0.75',
+                imageScale: '2'
             });
             console.log('Settings loaded:', settings);
             return settings;
@@ -294,7 +288,8 @@ export class PdfViewerProvider implements vscode.CustomReadonlyEditorProvider {
             console.error('Failed to load settings:', error);
             return {
                 imageFormat: 'jpeg',
-                jpegQuality: '0.75'
+                jpegQuality: '0.75',
+                imageScale: '2'
             };
         }
     }

@@ -59,6 +59,18 @@ PDF Viewer Pro automatically becomes the default PDF viewer in VS Code. Just **c
 - **Platform**: Works on Windows, macOS, and Linux
 - **Internet**: Required for initial PDF.js library download
 
+## 🛠️ Building from Source
+
+Requires [`just`](https://github.com/casey/just), `pnpm`, and Node.js ≥22.
+
+```bash
+just install
+```
+
+Runs `pnpm run build` (webpack production build + `vsce package`) and installs the resulting `.vsix` into VS Code via `code --install-extension … --force`. The version is read from `package.json`, so it stays in sync across `pnpm`-based and `just`-based workflows.
+
+After installing, **reload the VS Code window** (`Cmd/Ctrl+Shift+P` → "Developer: Reload Window") to pick up the new build. Look for the version tag at the right edge of the PDF Viewer toolbar to confirm it loaded.
+
 ## 🔧 Technical Features
 
 - **PDF.js Rendering** - Uses the same engine as Firefox and Chrome

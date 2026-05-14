@@ -8,7 +8,8 @@
     let batchImageCreation = false;
     let currentBatchPage = 1;
     let totalBatchPages = 0;
-    let currentPdfData = null;
+    let currentPdfUrl = null;
+    let currentPdfBytes = null;
 
     // Search state
     let searchResults = [];
@@ -25,6 +26,7 @@
     const createImageAllBtn = document.getElementById('createImageAll');
     const imageFormatSelect = document.getElementById('imageFormat');
     const jpegQualitySelect = document.getElementById('jpegQuality');
+    const imageScaleSelect = document.getElementById('imageScale');
     const nextPageBtn = document.getElementById('nextPage');
     const prevPageBtn = document.getElementById('prevPage');
     const passwordOverlay = document.getElementById('passwordOverlay');
@@ -39,10 +41,20 @@
     const searchNextBtn = document.getElementById('searchNext');
     const searchCloseBtn = document.getElementById('searchClose');
 
-    // Configure PDF.js worker from local bundle
+    // Configure PDF.js worker — fetch as blob so the Worker URL is same-origin.
+    // Without this, the cross-origin vscode-resource URL fails Worker construction
+    // and PDF.js silently falls back to parsing on the UI thread (very slow).
     const workerUri = document.body.getAttribute('data-worker-uri');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUri;
-    console.log('PDF.js loaded locally');
+    const workerReady = fetch(workerUri)
+        .then(function(r) { return r.blob(); })
+        .then(function(blob) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+            console.log('PDF.js worker ready (blob URL)');
+        })
+        .catch(function(e) {
+            console.error('Worker blob init failed; falling back to direct URL:', e);
+            pdfjsLib.GlobalWorkerOptions.workerSrc = workerUri;
+        });
 
     function updateUI() {
         currentPageSpan.textContent = pageNum;
@@ -60,7 +72,8 @@
     function saveSettings() {
         const settings = {
             imageFormat: imageFormatSelect?.value || 'jpeg',
-            jpegQuality: jpegQualitySelect?.value || '0.75'
+            jpegQuality: jpegQualitySelect?.value || '0.75',
+            imageScale: imageScaleSelect?.value || '2'
         };
         vscode.postMessage({
             type: 'saveSettings',
@@ -108,15 +121,40 @@
         }
     }
 
+    function setLoadingMessage(text) {
+        container.innerHTML = '<div class="loading"><p>' + text + '</p></div>';
+    }
+
     function loadPdfWithPassword(password) {
-        if (!currentPdfData) return;
+        if (!currentPdfUrl) return;
 
-        const opts = { data: currentPdfData.slice() };
-        if (password) {
-            opts.password = password;
-        }
+        const bytesPromise = currentPdfBytes
+            ? Promise.resolve(currentPdfBytes)
+            : (setLoadingMessage('Fetching PDF...'),
+               console.log('Fetching', currentPdfUrl),
+               fetch(currentPdfUrl)
+                .then(function(r) {
+                    console.log('Fetch response status:', r.status);
+                    if (!r.ok) throw new Error('Fetch failed: HTTP ' + r.status);
+                    return r.arrayBuffer();
+                })
+                .then(function(buf) {
+                    console.log('Fetched bytes:', buf.byteLength);
+                    currentPdfBytes = new Uint8Array(buf);
+                    return currentPdfBytes;
+                }));
 
-        pdfjsLib.getDocument(opts).promise.then(function(pdf) {
+        Promise.all([workerReady, bytesPromise]).then(function(results) {
+            const bytes = results[1];
+            setLoadingMessage('Parsing PDF...');
+            const opts = { data: bytes.slice() };
+            if (password) {
+                opts.password = password;
+            }
+            console.time('pdf-parse');
+            return pdfjsLib.getDocument(opts).promise;
+        }).then(function(pdf) {
+            console.timeEnd('pdf-parse');
             pdfDoc = pdf;
             hidePasswordOverlay();
             if (password) {
@@ -239,11 +277,11 @@
         updateUI();
     }
 
-    // Helper function to render a page at 100% scale to a canvas for export
-    function renderPageForExport(page, format, quality) {
+    // Render a page to a canvas for export. exportScale (e.g. 2 = 144 DPI).
+    function renderPageForExport(page, format, quality, exportScale) {
         return new Promise((resolve, reject) => {
             try {
-                const viewport = page.getViewport({ scale: 1.0 });
+                const viewport = page.getViewport({ scale: exportScale });
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 canvas.height = viewport.height;
@@ -282,9 +320,10 @@
 
         const format = imageFormatSelect?.value || 'jpeg';
         const quality = parseFloat(jpegQualitySelect?.value || '0.75');
+        const exportScale = parseFloat(imageScaleSelect?.value || '2');
 
         pdfDoc.getPage(pageNum).then(function(page) {
-            return renderPageForExport(page, format, quality);
+            return renderPageForExport(page, format, quality, exportScale);
         }).then(function(result) {
             vscode.postMessage({
                 type: 'createImage',
@@ -496,6 +535,7 @@
         });
     }
     if (jpegQualitySelect) jpegQualitySelect.addEventListener('change', saveSettings);
+    if (imageScaleSelect) imageScaleSelect.addEventListener('change', saveSettings);
     if (nextPageBtn) nextPageBtn.addEventListener('click', onNextPage);
     if (prevPageBtn) prevPageBtn.addEventListener('click', onPrevPage);
     if (printPdfBtn) printPdfBtn.addEventListener('click', function() {
@@ -592,8 +632,9 @@
                 break;
 
             case 'pdfData':
-                console.log('Received PDF data, loading...');
-                currentPdfData = Uint8Array.from(atob(message.data), c => c.charCodeAt(0));
+                console.log('Received PDF url, loading...');
+                currentPdfUrl = message.url;
+                currentPdfBytes = null;
                 allPagesTextContent = {};
                 searchResults = [];
                 currentMatchIndex = -1;
@@ -636,6 +677,9 @@
                     if (jpegQualitySelect && message.settings.jpegQuality) {
                         jpegQualitySelect.value = message.settings.jpegQuality;
                     }
+                    if (imageScaleSelect && message.settings.imageScale) {
+                        imageScaleSelect.value = message.settings.imageScale;
+                    }
                     toggleQualitySelector();
                 }
                 break;
@@ -648,9 +692,10 @@
         if (currentBatchPage <= totalBatchPages) {
             const format = imageFormatSelect?.value || 'jpeg';
             const quality = parseFloat(jpegQualitySelect?.value || '0.75');
+            const exportScale = parseFloat(imageScaleSelect?.value || '2');
 
             pdfDoc.getPage(currentBatchPage).then(function(page) {
-                return renderPageForExport(page, format, quality);
+                return renderPageForExport(page, format, quality, exportScale);
             }).then(function(result) {
                 vscode.postMessage({
                     type: 'createImage',

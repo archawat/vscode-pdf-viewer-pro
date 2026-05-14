@@ -24,7 +24,7 @@ Stack: TypeScript, webpack, PDF.js (bundled), VS Code Custom Editor API
 ### Technical
 
 - PDF.js 3.11.174 bundled in media/vendor/ (copied from pdfjs-dist at build time)
-- LRU cache for PDF data (capacity 100)
+- PDF loaded by URL via `webview.asWebviewUri(...)` — PDF.js streams the file directly, no base64 round-trip
 - Canvas-based rendering with devicePixelRatio scaling
 - Text layer overlay using pdfjsLib.renderTextLayer() for selection
 - Search extracts text from all pages, highlights matches with VS Code theme colors

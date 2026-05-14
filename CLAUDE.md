@@ -14,8 +14,6 @@ VS Code extension for viewing PDFs with navigation, zoom, image export, and pass
 src/
   extension.ts          — extension entry point, registers commands
   pdfViewerProvider.ts  — custom editor provider, handles webview messaging
-  pdfRenderer.ts        — reads PDF file and returns base64 data
-  pdfCache.ts           — LRU cache for PDF data
 media/
   main.js               — webview client script (PDF.js rendering, UI logic)
   styles.css            — webview styles
